@@ -1,3 +1,19 @@
+import datetime
+import jwt
+
+from typing import Annotated
+from fastapi import HTTPException, Depends
+from pydantic import BaseModel
+from fastapi.security import OAuth2PasswordBearer
+from depenedencies.database import get_db, SessionLocal
+
+from services.users import UserService
+from schemas.user import User, RolesEnum
+
+# Маркери для авторизації та отримання даних користувача
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+secret_key = "secret_key"
 
 
 class Token(BaseModel):
@@ -5,9 +21,10 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
-def create_access_token(data: dict):
+def create_access_token(username: str, role: str):
     token_data = {
-        "sub": str(data["username"]),
+        "sub": username,
+        "role": role,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(days=1)
     }
     token = jwt.encode(token_data, secret_key, algorithm="HS256")
@@ -16,25 +33,38 @@ def create_access_token(data: dict):
 
 
 def decode_jwt_token(token):
-    try:
-        # Декодуємо токен за допомогою секретного ключа
-        decoded_payload = jwt.decode(token, secret_key, algorithms=["HS256"])
-        return decoded_payload
-    except jwt.ExpiredSignatureError:
-        return "Токен вже закінчив свій строк дії"
-    except jwt.InvalidTokenError:
-        return "Недійсний токен"
+    decoded_payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    return decoded_payload
 
 
-def verify_password(plain_password, hashed_password):
-    return plain_password == hashed_password
-
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db : SessionLocal = Depends(get_db)):
     token = decode_jwt_token(token)
-    user = get_user(token.get("sub"))
-    if user is None:
-        raise HTTPException(status_code=401, detail="Недійсний токен")
+    user_service = UserService(db)
+    username = token.get("sub")
+    user = user_service.get_by_username(username)
     return user
+
+
+async def check_is_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role == RolesEnum.ADMIN:
+        return user
+    raise HTTPException(status_code=403)
+
+
+async def check_is_default_user(user: User = Depends(get_current_user)) -> User:
+    if user.role in [RolesEnum.USER, RolesEnum.MANAGER, RolesEnum.ADMIN]:
+        return user
+    raise HTTPException(status_code=403)
+
+
+async def check_is_manager(user: User = Depends(get_current_user)) -> User:
+    if user.role in [RolesEnum.MANAGER, RolesEnum.ADMIN]:
+        return user
+    raise HTTPException(status_code=403)
+
+
+DefaultUser = Annotated[User, Depends(check_is_default_user)]
+AdminUser = Annotated[User, Depends(check_is_admin)]
+Manager = Annotated[User, Depends(check_is_manager)]
+
 

@@ -1,22 +1,29 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+import urllib
+
+from fastapi import FastAPI, Depends, Request
 from api.todo_items import router as todo_router
+from api.users import router as user_router
 from models import todo
-from depenedencies.database import engine
-import json
-import jwt
-import datetime
+from depenedencies.database import engine, SessionLocal, get_db
+from depenedencies.auth import create_access_token
+from services.users import UserService
+
+from fastapi_sso.sso.google import GoogleSSO
 
 
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
 
 todo.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
 app.include_router(todo_router, prefix="/todo")
+app.include_router(user_router, prefix="/users")
 
-secret_key = "secret_key"
+
+GSSO_CLIENT_SECRET = "YOUR SECRET"
+GSSO_CLIENT_ID = "YOUR CLIENT ID"
+
+REDIRECT_URI = "http://localhost:8000/google/callback"
 
 
 @app.get("/")
@@ -25,34 +32,23 @@ async def health_check():
     return {"OK": True}
 
 
-# Маркери для авторизації та отримання даних користувача
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+def get_google_sso() -> GoogleSSO:
+    return GoogleSSO(GSSO_CLIENT_ID, GSSO_CLIENT_SECRET, redirect_uri=REDIRECT_URI)
 
 
 
-@app.post("/register/", response_model=User)
-async def register(user: UserCreate):
-    if user.username in users_db:
-        raise HTTPException(status_code=400, detail="Користувач з таким іменем вже існує")
-    
-    return User(**user.dict())
+@app.get("/auth/google")
+async def login_with_google():
+    google_auth_url = f"https://accounts.google.com/o/oauth2/auth?client_id={urllib.parse.quote(GSSO_CLIENT_ID)}&redirect_uri={urllib.parse.quote(REDIRECT_URI)}&scope=openid%20profile%20email&response_type=code"
+    return {"message": "Redirecting to Google for authentication...", "auth_url": google_auth_url}
 
 
-@app.post("/token/", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = get_user(form_data.username)
-    if user is None or not verify_password(form_data.password, user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неправильний логін або пароль",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    access_token = create_access_token({"username": user.username})
+@app.get("/google/callback")
+async def complete_google_login(request: Request,  google_sso: GoogleSSO = Depends(get_google_sso),  db: SessionLocal = Depends(get_db)):
+    google_user = await google_sso.verify_and_process(request)
+
+    user_service = UserService(db)
+    user = user_service.get_by_username(google_user.email)
+    access_token = create_access_token(username= user.username, role=user.role)
     return {"access_token": access_token, "token_type": "bearer"}
-
-@app.get("/protected-resource/", response_model=User)
-async def protected_resource(current_user: User = Depends(get_current_user)):
-    return current_user
-
 

@@ -46,19 +46,19 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db : SessionLoca
 
 
 async def check_is_admin(user: User = Depends(get_current_user)) -> User:
-    if user.role == RolesEnum.ADMIN:
+    if user.role == RolesEnum.ADMIN and user.is_active:
         return user
     raise HTTPException(status_code=403)
 
 
 async def check_is_default_user(user: User = Depends(get_current_user)) -> User:
-    if user.role in [RolesEnum.USER, RolesEnum.MANAGER, RolesEnum.ADMIN]:
+    if user.role in [RolesEnum.USER, RolesEnum.MANAGER, RolesEnum.ADMIN] and user.is_active:
         return user
     raise HTTPException(status_code=403)
 
 
 async def check_is_manager(user: User = Depends(get_current_user)) -> User:
-    if user.role in [RolesEnum.MANAGER, RolesEnum.ADMIN]:
+    if user.role in [RolesEnum.MANAGER, RolesEnum.ADMIN] and user.is_active:
         return user
     raise HTTPException(status_code=403)
 

@@ -18,6 +18,10 @@ class UserRepo():
         self.db.refresh(new_user)
         return new_user
 
+    def update(self, user):
+        self.db.query(UserDB).filter(UserDB.username==user.username).delete()
+        return self.create(user)
+
     def get_by_username(self, username):
         return self.db.query(UserDB).filter(UserDB.username==username).first()
 

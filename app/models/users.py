@@ -8,4 +8,8 @@ class UserDB(BaseModel):
     password = Column(String)
     salt = Column(String)
     role = Column(String)
+    is_active = Column(Boolean)
+    otp = Column(String)
+    image = Column(String)
+
 

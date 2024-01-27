@@ -1,5 +1,9 @@
 import urllib
 
+
+from fastapi_sso.sso.google import GoogleSSO
+from fastapi.middleware.cors import CORSMiddleware
+
 from fastapi import FastAPI, Depends, Request
 from api.todo_items import router as todo_router
 from api.users import router as user_router
@@ -7,14 +11,22 @@ from models import todo
 from depenedencies.database import engine, SessionLocal, get_db
 from depenedencies.auth import create_access_token
 from services.users import UserService
+from schemas.user import Email
 
-from fastapi_sso.sso.google import GoogleSSO
+app = FastAPI()
+
+# Додавання CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:8000"], 
+    allow_credentials=True,
+)
 
 
 
 todo.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+
 
 app.include_router(todo_router, prefix="/todo")
 app.include_router(user_router, prefix="/users")
@@ -52,3 +64,11 @@ async def complete_google_login(request: Request,  google_sso: GoogleSSO = Depen
     access_token = create_access_token(username= user.username, role=user.role)
     return {"access_token": access_token, "token_type": "bearer"}
 
+
+
+@app.post("/get_acces_token")
+async def complete_google_login(login: Email, db: SessionLocal = Depends(get_db)):
+    user_service = UserService(db)
+    user = user_service.get_by_username(login.email)
+    access_token = create_access_token(username= user.username, role=user.role)
+    return {"access_token": access_token, "token_type": "bearer"}
